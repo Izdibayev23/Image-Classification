@@ -1,0 +1,50 @@
+import cv2
+import os
+import datetime
+
+def main():
+    # Initialize the webcam (use 0 for default camera)
+    cap = cv2.VideoCapture(0)
+
+    if not cap.isOpened():
+        print("Error: Webcam not found.")
+        return
+
+    screenshot_dir = "screenshots"
+    if not os.path.exists(screenshot_dir):
+        os.makedirs(screenshot_dir)
+
+    screenshot_taken = False
+    screenshot_timer = 0
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Error: Cannot capture frame.")
+            break
+
+        # Display the confirmation message on the frame
+        if screenshot_taken:
+            cv2.putText(frame, "Image was saved", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            screenshot_timer += 1
+
+            if screenshot_timer > 50:  # Message display duration
+                screenshot_taken = False
+                screenshot_timer = 0
+
+        cv2.imshow('Webcam Feed (Press s to take a screenshot)', frame)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
+            break
+        elif key == ord('s'):
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = os.path.join(screenshot_dir, f"screenshot_{timestamp}.png")
+            cv2.imwrite(filename, frame)
+            screenshot_taken = True
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
