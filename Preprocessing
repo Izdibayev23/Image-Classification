@@ -1,0 +1,74 @@
+import os
+import shutil
+import numpy as np
+import cv2
+from tensorflow.keras.utils import to_categorical
+
+# Define age categories
+age_bins = [0, 13, 20, 37, 51, 71, 117]
+age_labels = ['Kid', 'Teenager', 'Young', 'Adult', 'Senior', 'Elderly']
+
+def categorize_age(age):
+    for i, upper_bound in enumerate(age_bins):
+        if age < upper_bound:
+            return age_labels[max(i - 1, 0)]
+    return age_labels[-1]
+
+def process_and_save_image(file, source_dir, dest_dir):
+    # Extract age and gender from filename
+    parts = file.split('_')
+    age = int(parts[0])
+
+    # Check if gender info is available and extract it
+    if len(parts) > 1:
+        gender_str = parts[1].split('.')[0]  # Extracts the gender string before the file extension
+        gender = int(gender_str) if gender_str.isdigit() else -1  # Default to -1 if not a valid number
+    else:
+        gender = -1
+
+    # Categorize age
+    age_category = categorize_age(age)
+
+    # Load and preprocess image
+    image_path = os.path.join(source_dir, file)
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (200, 200))  # Resize to 200x200
+    image = image / 255.0  # Normalize
+    
+    # Convert the image back to uint8 data type
+    image_uint8 = (image * 255).astype(np.uint8)
+
+    # Save preprocessed image
+    cv2.imwrite(os.path.join(dest_dir, file), cv2.cvtColor(image_uint8, cv2.COLOR_RGB2BGR))
+
+def split_dataset(source_dir, train_dir, val_dir, test_dir, train_size=0.7, val_size=0.15):
+    # Make sure the directories exist
+    os.makedirs(train_dir, exist_ok=True)
+    os.makedirs(val_dir, exist_ok=True)
+    os.makedirs(test_dir, exist_ok=True)
+
+    # Get all image filenames
+    files = [file for file in os.listdir(source_dir) if file.endswith('.jpg')]
+    np.random.shuffle(files)
+
+    # Calculate split indices
+    train_split = int(len(files) * train_size)
+    val_split = int(len(files) * (train_size + val_size))
+
+    # Process and copy files to respective directories
+    for file in files[:train_split]:
+        process_and_save_image(file, source_dir, train_dir)
+    for file in files[train_split:val_split]:
+        process_and_save_image(file, source_dir, val_dir)
+    for file in files[val_split:]:
+        process_and_save_image(file, source_dir, test_dir)
+
+# Paths for your dataset
+source_directory = '/home/user/anaconda3/envs/image_class/data/UTK'
+train_directory = '/home/user/anaconda3/envs/image_class/notebooks/train'
+val_directory = '/home/user/anaconda3/envs/image_class/notebooks/val'
+test_directory = '/home/user/anaconda3/envs/image_class/notebooks/test'
+
+# Run the splitting and processing function
+split_dataset(source_directory, train_directory, val_directory, test_directory)
