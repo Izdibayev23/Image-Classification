@@ -1,3 +1,8 @@
+pip install tensorflow==2.10 tensorflow-gpu==2.10 keras opencv-python matplotlib
+import tensorflow as tf
+tf.config.list_physical_devices('GPU')
+
+
 import os
 import shutil
 import numpy as np
