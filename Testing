@@ -1,0 +1,95 @@
+import os
+import numpy as np
+import cv2
+import tensorflow as tf
+from tensorflow.keras.utils import Sequence, to_categorical
+from tensorflow.keras.models import load_model
+
+# Custom Data Generator for Test Data
+class TestDataGenerator(Sequence):
+    def __init__(self, directory, age_labels, batch_size=32, target_size=(200, 200)):
+        self.directory = directory
+        self.age_labels = age_labels
+        self.batch_size = batch_size
+        self.target_size = target_size
+        self.file_names = os.listdir(directory)
+
+    def __len__(self):
+        return int(np.ceil(len(self.file_names) / self.batch_size))
+
+    def __getitem__(self, index):
+        start = index * self.batch_size
+        end = min((index + 1) * self.batch_size, len(self.file_names))
+        batch_file_names = self.file_names[start:end]
+        X, y_age, y_gender = self.__data_generation(batch_file_names)
+        return X, {'age_output': y_age, 'gender_output': y_gender}
+
+    def __data_generation(self, batch_file_names):
+        X = np.empty((len(batch_file_names), *self.target_size, 3))
+        y_age = np.empty((len(batch_file_names)), dtype=int)
+        y_gender = np.empty((len(batch_file_names)), dtype=int)
+
+        for i, file_name in enumerate(batch_file_names):
+            img_path = os.path.join(self.directory, file_name)
+            img = cv2.imread(img_path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, self.target_size)
+            img = img / 255.0
+
+            age, gender = self.extract_labels(file_name)
+            age_index = self.age_to_index(age)
+
+            X[i,] = img
+            y_age[i] = age_index
+            y_gender[i] = gender
+
+        return X, to_categorical(y_age, num_classes=len(self.age_labels)), to_categorical(y_gender, num_classes=2)
+
+    @staticmethod
+    def extract_labels(file_name):
+        parts = file_name.split('_')
+        age = int(parts[0])
+        gender = int(parts[1].split('.')[0])
+        return age, gender
+
+    def age_to_index(self, age):
+        age_bins = [0, 13, 20, 37, 51, 71, 117]
+        age_category = np.digitize([age], age_bins)[0] - 1
+        return age_category
+
+# Age labels and gender labels
+age_labels = ['Kid', 'Teenager', 'Young', 'Adult', 'Senior', 'Elderly']
+gender_labels = ['Male', 'Female']
+
+
+# Load the model
+model = load_model('/home/user/anaconda3/envs/image_class/models/age_gender.keras')
+
+# Initialize data generator for test data
+test_directory = '/home/user/anaconda3/envs/image_class/test'  # Replace with your test data directory
+test_generator = TestDataGenerator(test_directory, age_labels)
+
+    
+# Evaluate the model on test data
+results = model.evaluate(test_generator)
+print("Test Loss, Test Accuracy:", results)
+
+# Iterate through the test generator and make predictions
+for i in range(len(test_generator)):
+    X, _ = test_generator[i]
+    predictions = model.predict(X)
+
+    # Iterate over each prediction in the batch
+    for j in range(len(predictions[0])):
+        age_pred = np.argmax(predictions[0][j])
+        gender_pred = np.argmax(predictions[1][j])
+
+        # Convert age and gender predictions to labels
+        age_label = age_labels[age_pred]
+        gender_label = gender_labels[gender_pred]
+        
+        # Get the file name for the current image
+        file_name = test_generator.file_names[i * test_generator.batch_size + j]
+        
+        # Display the results
+        print(f"File: {file_name}, Age - {age_label}, Gender - {gender_label}")
