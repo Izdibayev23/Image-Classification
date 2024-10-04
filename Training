@@ -1,0 +1,100 @@
+import os
+import numpy as np
+import cv2
+import tensorflow as tf
+from tensorflow.keras.utils import Sequence, to_categorical
+from tensorflow.keras.applications import VGG16
+from tensorflow.keras.layers import Flatten, Dense, Dropout
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+
+# Custom Data Generator
+class CustomDataGenerator(Sequence):
+    def __init__(self, directory, age_labels, batch_size=32, target_size=(200, 200)):
+        self.directory = directory
+        self.age_labels = age_labels
+        self.batch_size = batch_size
+        self.target_size = target_size
+        self.file_names = os.listdir(directory)
+        self.on_epoch_end()
+
+    def __len__(self):
+        return int(np.floor(len(self.file_names) / self.batch_size))
+
+    def __getitem__(self, index):
+        indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
+        batch_file_names = [self.file_names[k] for k in indexes]
+        X, y_age, y_gender = self.__data_generation(batch_file_names)
+        return X, {'age_output': y_age, 'gender_output': y_gender}
+
+    def on_epoch_end(self):
+        self.indexes = np.arange(len(self.file_names))
+        np.random.shuffle(self.indexes)
+
+    def __data_generation(self, batch_file_names):
+        X = np.empty((self.batch_size, *self.target_size, 3))
+        y_age = np.empty((self.batch_size), dtype=int)
+        y_gender = np.empty((self.batch_size), dtype=int)
+
+        for i, file_name in enumerate(batch_file_names):
+            img_path = os.path.join(self.directory, file_name)
+            img = cv2.imread(img_path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, self.target_size)
+            img = img / 255.0
+
+            age, gender = self.extract_labels(file_name)
+            age_index = self.age_to_index(age)
+
+            X[i,] = img
+            y_age[i] = age_index
+            y_gender[i] = gender
+
+        return X, to_categorical(y_age, num_classes=len(self.age_labels)), to_categorical(y_gender, num_classes=2)
+
+    @staticmethod
+    def extract_labels(file_name):
+        parts = file_name.split('_')
+        age = int(parts[0])
+        gender = int(parts[1].split('.')[0])
+        return age, gender
+
+    def age_to_index(self, age):
+        age_bins = [0, 13, 20, 37, 51, 71, 117]
+        age_category = np.digitize([age], age_bins)[0] - 1
+        return age_category
+
+# Age labels
+age_labels = ['Kid', 'Teenager', 'Young', 'Adult', 'Senior', 'Elderly']
+
+# Load the VGG16 model pre-trained on ImageNet
+base_model = VGG16(weights='imagenet', include_top=False, input_shape=(200, 200, 3))
+
+# Add custom layers on top of the base model
+x = Flatten()(base_model.output)
+x = Dense(1024, activation='relu')(x)
+x = Dropout(0.5)(x)
+age_output = Dense(len(age_labels), activation='softmax', name='age_output')(x)
+gender_output = Dense(2, activation='softmax', name='gender_output')(x)
+
+# Define the model
+model = Model(inputs=base_model.input, outputs=[age_output, gender_output])
+
+# Compile the model
+model.compile(optimizer=Adam(learning_rate=0.0001), loss={'age_output': 'categorical_crossentropy', 'gender_output': 'binary_crossentropy'}, metrics=['accuracy'])
+
+# Initialize data generators
+train_generator = CustomDataGenerator('/home/user/anaconda3/envs/image_class/train', age_labels)
+val_generator = CustomDataGenerator('/home/user/anaconda3/envs/image_class/val', age_labels)
+
+# Train the model
+history = model.fit(
+    train_generator,
+    validation_data=val_generator,
+    epochs=20,
+    steps_per_epoch=len(train_generator),
+    validation_steps=len(val_generator)
+)
+
+# Save the model
+model.save('/home/user01/anaconda3/envs/image_class/models/age_gender.h5')
